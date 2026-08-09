@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>❤️ 2000 I Love You</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0b0a0f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        .container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 700px;
+            padding: 10px;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1/1;
+            background: #0b0a0f;
+            border-radius: 28px;
+            touch-action: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <canvas id="heartCanvas" width="700" height="700"></canvas>
+</div>
+
+<script>
+    (function() {
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 700, H = 700;
+        canvas.width = W; canvas.height = H;
+
+        // ─── پارامترهای قلب ──────────────────────────────────────────────
+        const SCALE = 13.5;
+        const CX = W/2, CY = H/2 + 4;
+
+        function heartX(t) { return SCALE * 16 * Math.pow(Math.sin(t), 3); }
+        function heartY(t) { return SCALE * (13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)); }
+
+        // ─── تولید خطوط قلب ──────────────────────────────────────────────
+        const OUTLINE_COUNT = 120;
+        let heartOutline = [];
+        function generateHeartOutline() {
+            heartOutline = [];
+            for (let i = 0; i < OUTLINE_COUNT; i++) {
+                const t = (i / OUTLINE_COUNT) * 2 * Math.PI;
+                heartOutline.push({
+                    x: CX + heartX(t),
+                    y: CY - heartY(t)
+                });
+            }
+        }
+        generateHeartOutline();
+
+        // ─── گلو (دم) ──────────────────────────────────────────────────────
+        let maxY = -Infinity;
+        for (const p of heartOutline) if (p.y > maxY) maxY = p.y;
+
+        let leftBottom = null, rightBottom = null;
+        let minDistLeft = Infinity, minDistRight = Infinity;
+        for (const p of heartOutline) {
+            if (p.y > maxY - 8) {
+                const distFromCenter = p.x - CX;
+                if (distFromCenter < 0 && Math.abs(distFromCenter) < Math.abs(minDistLeft)) {
+                    minDistLeft = distFromCenter;
+                    leftBottom = p;
+                } else if (distFromCenter > 0 && distFromCenter < Math.abs(minDistRight)) {
+                    minDistRight = distFromCenter;
+                    rightBottom = p;
+                }
+            }
+        }
+        if (!leftBottom) {
+            let minX = Infinity;
+            for (const p of heartOutline) {
+                if (p.y > maxY - 6 && p.x < minX) {
+                    minX = p.x;
+                    leftBottom = p;
+                }
+            }
+        }
+        if (!rightBottom) {
+            let maxX = -Infinity;
+            for (const p of heartOutline) {
+                if (p.y > maxY - 6 && p.x > maxX) {
+                    maxX = p.x;
+                    rightBottom = p;
+                }
+            }
+        }
+
+        const GLUE_HEIGHT = 40;
+        const GLUE_BOTTOM_WIDTH = 24;
+        const gluePoints = [];
+        if (leftBottom && rightBottom) {
+            const midX = (leftBottom.x + rightBottom.x) / 2;
+            const bottomY = maxY + GLUE_HEIGHT;
+            const steps = 20;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const curve = t * t * (3 - 2 * t);
+                const x = leftBottom.x + (rightBottom.x - leftBottom.x) * t;
+                const y = maxY + curve * GLUE_HEIGHT;
+                const widthFactor = 1 - 0.35 * curve;
+                const centerX = (leftBottom.x + rightBottom.x) / 2;
+                const px = centerX + (x - centerX) * widthFactor;
+                gluePoints.push({ x: px, y: y });
+            }
+            const bottomWidth = GLUE_BOTTOM_WIDTH;
+            const bottomLeft = { x: midX - bottomWidth/2, y: bottomY };
+            const bottomRight = { x: midX + bottomWidth/2, y: bottomY };
+            gluePoints.push(bottomRight);
+            gluePoints.push(bottomLeft);
+        }
+
+        // ─── point-in-polygon ──────────────────────────────────────────────
+        function pointInPolygon(px, py, polygon) {
+            let inside = false;
+            const n = polygon.length;
+            for (let i = 0, j = n-1; i < n; j = i++) {
+                const xi = polygon[i].x, yi = polygon[i].y;
+                const xj = polygon[j].x, yj = polygon[j].y;
+                const intersect = ((yi > py) !== (yj > py)) &&
+                    (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        // ─── تولید نقاط داخل ──────────────────────────────────────────────
+        let insidePoints = [];
+        function generateInsidePoints() {
+            const INSIDE_TARGET = 2000;
+            const candidates = [];
+
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxYall = -Infinity;
+            const allOutlines = heartOutline.concat(gluePoints);
+            for (const p of allOutlines) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxYall) maxYall = p.y;
+            }
+            const margin = 4;
+            minX -= margin; maxX += margin;
+            minY -= margin; maxYall += margin;
+
+            const gridStep = 3.8;
+            const cols = Math.floor((maxX - minX) / gridStep);
+            const rows = Math.floor((maxYall - minY) / gridStep);
+            const gridPoints = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const px = minX + (c + 0.5) * gridStep + (Math.random() - 0.5) * gridStep * 0.3;
+                    const py = minY + (r + 0.5) * gridStep + (Math.random() - 0.5) * gridStep * 0.3;
+                    gridPoints.push({ x: px, y: py });
+                }
+            }
+            for (let i = gridPoints.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [gridPoints[i], gridPoints[j]] = [gridPoints[j], gridPoints[i]];
+            }
+
+            for (const p of gridPoints) {
+                if (candidates.length >= INSIDE_TARGET * 1.3) break;
+                if (pointInPolygon(p.x, p.y, heartOutline) || 
+                    (gluePoints.length > 0 && pointInPolygon(p.x, p.y, gluePoints))) {
+                    candidates.push(p);
+                }
+            }
+            let attempts = 0;
+            while (candidates.length < INSIDE_TARGET && attempts < 150000) {
+                attempts++;
+                const px = minX + Math.random() * (maxX - minX);
+                const py = minY + Math.random() * (maxYall - minY);
+                if (pointInPolygon(px, py, heartOutline) || 
+                    (gluePoints.length > 0 && pointInPolygon(px, py, gluePoints))) {
+                    candidates.push({ x: px, y: py });
+                }
+            }
+            insidePoints = candidates.slice(0, INSIDE_TARGET);
+            for (let i = insidePoints.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [insidePoints[i], insidePoints[j]] = [insidePoints[j], insidePoints[i]];
+            }
+        }
+        generateInsidePoints();
+
+        // ─── اندازه فونت ────────────────────────────────────────────────────
+        function getFontSize() {
+            const base = Math.min(W, H) / 65;
+            return Math.max(6, Math.min(11, base));
+        }
+
+        const TEXT = 'i love you';
+        const RED_COLOR = '#8B0000';
+
+        function drawTextAt(x, y, alpha = 0.85) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.font = `bold ${getFontSize()}px -apple-system, "Segoe UI", "Arial", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = RED_COLOR;
+            ctx.fillText(TEXT, x, y);
+            ctx.restore();
+        }
+
+        // ─── وضعیت انیمیشن ──────────────────────────────────────────────────
+        let outlineIndex = 0;
+        let insideIndex = 0;
+        let phase = 'outline';
+        let lastTimestamp = 0;
+        let animationFrameId = null;
+        let outlineTimer = 0;
+        let insideTimer = 0;
+
+        const OUTLINE_INTERVAL = 60;
+        const BATCH_SIZE = 3;
+
+        // ─── رندر ──────────────────────────────────────────────────────────
+        function render() {
+            ctx.clearRect(0, 0, W, H);
+
+            // رسم دور قلب
+            for (let i = 0; i < outlineIndex && i < heartOutline.length; i++) {
+                const p = heartOutline[i];
+                drawTextAt(p.x, p.y, 0.9);
+            }
+
+            // رسم دور گلو
+            if (gluePoints.length > 0) {
+                const glueStart = heartOutline.length;
+                for (let i = 0; i < outlineIndex - glueStart && i < gluePoints.length; i++) {
+                    if (outlineIndex > glueStart) {
+                        const p = gluePoints[i];
+                        drawTextAt(p.x, p.y, 0.9);
+                    }
+                }
+            }
+
+            // رسم نقاط داخل
+            for (let i = 0; i < insideIndex && i < insidePoints.length; i++) {
+                const p = insidePoints[i];
+                if (pointInPolygon(p.x, p.y, heartOutline) || 
+                    (gluePoints.length > 0 && pointInPolygon(p.x, p.y, gluePoints))) {
+                    drawTextAt(p.x, p.y, 0.75);
+                }
+            }
+        }
+
+        function easeInOut(t) {
+            return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        }
+
+        // ─── حلقه انیمیشن ──────────────────────────────────────────────────
+        function animate(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const delta = Math.min(timestamp - lastTimestamp, 50);
+            lastTimestamp = timestamp;
+
+            const totalOutline = heartOutline.length + (gluePoints.length > 0 ? gluePoints.length : 0);
+
+            if (phase === 'outline') {
+                outlineTimer += delta;
+                while (outlineTimer >= OUTLINE_INTERVAL) {
+                    outlineTimer -= OUTLINE_INTERVAL;
+                    for (let i = 0; i < BATCH_SIZE && outlineIndex < totalOutline; i++) {
+                        outlineIndex++;
+                    }
+                }
+                if (outlineIndex >= totalOutline) {
+                    phase = 'inside';
+                    outlineTimer = 0;
+                    insideTimer = -200;
+                }
+            } else if (phase === 'inside') {
+                insideTimer += delta;
+                const progress = Math.min(insideTimer / 6000, 1);
+                const eased = easeInOut(progress);
+                const targetIndex = Math.floor(eased * insidePoints.length);
+                
+                if (insideIndex < targetIndex) {
+                    const step = Math.max(1, Math.floor((targetIndex - insideIndex) / 10) + 1);
+                    insideIndex = Math.min(insideIndex + step, targetIndex);
+                }
+                if (insideIndex >= insidePoints.length) {
+                    phase = 'done';
+                }
+            }
+
+            render();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // ─── شروع ──────────────────────────────────────────────────────────
+        ctx.clearRect(0, 0, W, H);
+        setTimeout(() => {
+            animationFrameId = requestAnimationFrame(animate);
+        }, 300);
+
+        // ─── کلیک برای ری‌استارت ──────────────────────────────────────────
+        canvas.addEventListener('click', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            outlineIndex = 0;
+            insideIndex = 0;
+            phase = 'outline';
+            outlineTimer = 0;
+            insideTimer = 0;
+            lastTimestamp = 0;
+            
+            generateHeartOutline();
+            generateInsidePoints();
+            
+            ctx.clearRect(0, 0, W, H);
+            render();
+            
+            animationFrameId = requestAnimationFrame(animate);
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            outlineIndex = 0;
+            insideIndex = 0;
+            phase = 'outline';
+            outlineTimer = 0;
+            insideTimer = 0;
+            lastTimestamp = 0;
+            
+            generateHeartOutline();
+            generateInsidePoints();
+            
+            ctx.clearRect(0, 0, W, H);
+            render();
+            
+            animationFrameId = requestAnimationFrame(animate);
+        });
+    })();
+</script>
+</body>
+</html>
